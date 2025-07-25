@@ -11,39 +11,23 @@ export async function validateCodeClientSide(code: string): Promise<ValidationRe
   try {
     console.log(`Validating code client-side: ${code}`)
     
-    // Try a direct fetch first - this likely won't work due to CORS, but it's worth a try
-    try {
-      const response = await fetch(`https://www.perplexity.ai/join/p/priority/${code}`, {
-        method: 'GET',
-        mode: 'no-cors', // This allows the request but limits response access
-        redirect: 'follow',
-        headers: {
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'User-Agent': navigator.userAgent || 'Mozilla/5.0'
-        }
-      });
-      
-      // This will use your current network connection (including VPN if active)
-      console.log(`Fetch response type: ${response.type} - Using current network/VPN connection`);
-    } catch (fetchError) {
-      console.log('Fetch failed (expected due to CORS):', fetchError);
-    }
+    // Skip the direct fetch attempt since it will fail due to CORS
+    // We'll go straight to the popup approach which works with VPN
     
-    // Use a better approach - open in a popup window
     return new Promise((resolve) => {
       // Create a popup window to check the code - this works with VPNs
       const popupWidth = 800;
       const popupHeight = 600;
       const left = (window.screen.width - popupWidth) / 2;
       const top = (window.screen.height - popupHeight) / 2;
-      
+
+      // Open validation window directly - no login needed
       const newWindow = window.open(
         `https://www.perplexity.ai/join/p/priority/${code}`, 
         'validateCode',
         `width=${popupWidth},height=${popupHeight},top=${top},left=${left}`
       );
       
-      // User will need to manually check and report the result
       if (!newWindow) {
         // Popup was blocked
         resolve({
@@ -56,7 +40,7 @@ export async function validateCodeClientSide(code: string): Promise<ValidationRe
       
       // Create buttons for user to report the result
       const validationTimer = setTimeout(() => {
-        // After 3 seconds, show the validation buttons
+        // After 1.5 seconds, show the validation buttons
         try {
           // Focus window to get user attention
           newWindow.focus();
@@ -67,24 +51,24 @@ export async function validateCodeClientSide(code: string): Promise<ValidationRe
           controlPanel.style.bottom = '0';
           controlPanel.style.left = '0';
           controlPanel.style.width = '100%';
-          controlPanel.style.padding = '10px';
-          controlPanel.style.backgroundColor = '#f0f0f0';
-          controlPanel.style.borderTop = '1px solid #ccc';
+          controlPanel.style.padding = '20px';
+          controlPanel.style.backgroundColor = '#111';
+          controlPanel.style.borderTop = '1px solid #333';
           controlPanel.style.zIndex = '9999';
           controlPanel.style.textAlign = 'center';
           
           controlPanel.innerHTML = `
-            <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto;">
-              <h3 style="margin: 0 0 10px 0;">Is the promo code "${code}" valid?</h3>
-              <p style="margin: 0 0 15px 0;">Check if you see "Promo Code Applied" message above</p>
+            <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; color: white;">
+              <h3 style="margin: 0 0 10px 0; color: white;">Is the promo code "${code}" valid?</h3>
+              <p style="margin: 0 0 15px 0; color: white;">Check if you see "Promo Code Applied" or enter the code to validate</p>
               <div>
-                <button id="codeValid" style="background: #4CAF50; color: white; border: none; padding: 10px 15px; margin: 0 5px; cursor: pointer; border-radius: 4px;">
+                <button id="codeValid" style="background: #4CAF50; color: white; border: none; padding: 10px 20px; margin: 0 5px; cursor: pointer; border-radius: 4px; font-weight: bold;">
                   Valid ✓ (Code Applied)
                 </button>
-                <button id="codeInvalid" style="background: #F44336; color: white; border: none; padding: 10px 15px; margin: 0 5px; cursor: pointer; border-radius: 4px;">
+                <button id="codeInvalid" style="background: #F44336; color: white; border: none; padding: 10px 20px; margin: 0 5px; cursor: pointer; border-radius: 4px; font-weight: bold;">
                   Invalid ✗ (Error/Not Available)
                 </button>
-                <button id="codeCancel" style="background: #9E9E9E; color: white; border: none; padding: 10px 15px; margin: 0 5px; cursor: pointer; border-radius: 4px;">
+                <button id="codeCancel" style="background: #555; color: white; border: none; padding: 10px 20px; margin: 0 5px; cursor: pointer; border-radius: 4px;">
                   Cancel
                 </button>
               </div>
@@ -136,8 +120,9 @@ export async function validateCodeClientSide(code: string): Promise<ValidationRe
         } catch (error) {
           // If we can't modify the popup (CORS), provide instructions
           console.log('Could not modify popup:', error);
+          toast.error('Please manually check if the code is valid and close the popup when done');
         }
-      }, 2000);
+      }, 1500); // Reduced time to 1.5 seconds - faster feedback
       
       // Handle window close
       const checkClosed = setInterval(() => {
