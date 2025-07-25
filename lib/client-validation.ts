@@ -11,117 +11,156 @@ export async function validateCodeClientSide(code: string): Promise<ValidationRe
   try {
     console.log(`Validating code client-side: ${code}`)
     
-    // Since direct fetch to Perplexity will be blocked by CORS,
-    // we'll use a different approach: create a hidden iframe
+    // Try a direct fetch first - this likely won't work due to CORS, but it's worth a try
+    try {
+      const response = await fetch(`https://www.perplexity.ai/join/p/priority/${code}`, {
+        method: 'GET',
+        mode: 'no-cors', // This allows the request but limits response access
+        redirect: 'follow',
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'User-Agent': navigator.userAgent || 'Mozilla/5.0'
+        }
+      });
+      
+      // This will use your current network connection (including VPN if active)
+      console.log(`Fetch response type: ${response.type} - Using current network/VPN connection`);
+    } catch (fetchError) {
+      console.log('Fetch failed (expected due to CORS):', fetchError);
+    }
+    
+    // Use a better approach - open in a popup window
     return new Promise((resolve) => {
-      const iframe = document.createElement('iframe')
-      iframe.style.display = 'none'
-      iframe.style.width = '1px'
-      iframe.style.height = '1px'
+      // Create a popup window to check the code - this works with VPNs
+      const popupWidth = 800;
+      const popupHeight = 600;
+      const left = (window.screen.width - popupWidth) / 2;
+      const top = (window.screen.height - popupHeight) / 2;
       
-      let resolved = false
-      const timeout = setTimeout(() => {
-        if (!resolved) {
-          resolved = true
-          document.body.removeChild(iframe)
-          resolve({
-            code,
-            status: 'invalid',
-            message: 'Validation timeout - unable to reach Perplexity'
-          })
-        }
-      }, 10000) // 10 second timeout
+      const newWindow = window.open(
+        `https://www.perplexity.ai/join/p/priority/${code}`, 
+        'validateCode',
+        `width=${popupWidth},height=${popupHeight},top=${top},left=${left}`
+      );
       
-      iframe.onload = () => {
-        if (resolved) return
-        resolved = true
-        
-        try {
-          // Check if we can access the iframe content
-          // If we get an error, it might be due to region blocking
-          const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document
-          
-          if (!iframeDoc) {
-            clearTimeout(timeout)
-            document.body.removeChild(iframe)
-            resolve({
-              code,
-              status: 'invalid',
-              message: 'Unable to validate - possible region restriction'
-            })
-            return
-          }
-          
-          const html = iframeDoc.documentElement.innerHTML.toLowerCase()
-          let status: 'valid' | 'invalid' = 'invalid'
-          let message = ''
-          
-          if (
-            html.includes('an error occurred') ||
-            html.includes('promotion code is invalid') ||
-            html.includes('likely your promotion code is invalid') ||
-            html.includes('not available in your region') ||
-            html.includes('not available in your country')
-          ) {
-            status = 'invalid'
-            if (html.includes('not available in your region') || html.includes('not available in your country')) {
-              message = 'Code not available in current region/country'
-            } else {
-              message = 'Promotion code is invalid'
-            }
-          } else if (
-            html.includes('enter your promo code') ||
-            html.includes('continue') ||
-            html.includes('you are receiving a free 1-year subscription') ||
-            html.includes('subscription') ||
-            html.includes('upgrade')
-          ) {
-            status = 'valid'
-            message = 'Promo code is valid and ready to use'
-          } else {
-            status = 'invalid'
-            message = 'Unable to validate - check manually'
-          }
-          
-          clearTimeout(timeout)
-          document.body.removeChild(iframe)
-          resolve({ code, status, message })
-          
-        } catch (error) {
-          clearTimeout(timeout)
-          document.body.removeChild(iframe)
-          resolve({
-            code,
-            status: 'invalid',
-            message: 'Validation blocked - possible region restriction or security policy'
-          })
-        }
-      }
-      
-      iframe.onerror = () => {
-        if (resolved) return
-        resolved = true
-        clearTimeout(timeout)
-        document.body.removeChild(iframe)
+      // User will need to manually check and report the result
+      if (!newWindow) {
+        // Popup was blocked
         resolve({
           code,
-          status: 'invalid',
-          message: 'Failed to load validation page - check your connection'
-        })
+          status: 'pending',
+          message: 'Popup blocked - please allow popups and try again'
+        });
+        return;
       }
       
-      const url = `https://www.perplexity.ai/join/p/priority/${code}`
-      document.body.appendChild(iframe)
-      iframe.src = url
-    })
-
+      // Create buttons for user to report the result
+      const validationTimer = setTimeout(() => {
+        // After 3 seconds, show the validation buttons
+        try {
+          // Focus window to get user attention
+          newWindow.focus();
+          
+          // Create a control panel for reporting results
+          const controlPanel = document.createElement('div');
+          controlPanel.style.position = 'fixed';
+          controlPanel.style.bottom = '0';
+          controlPanel.style.left = '0';
+          controlPanel.style.width = '100%';
+          controlPanel.style.padding = '10px';
+          controlPanel.style.backgroundColor = '#f0f0f0';
+          controlPanel.style.borderTop = '1px solid #ccc';
+          controlPanel.style.zIndex = '9999';
+          controlPanel.style.textAlign = 'center';
+          
+          controlPanel.innerHTML = `
+            <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto;">
+              <h3 style="margin: 0 0 10px 0;">Is the promo code "${code}" valid?</h3>
+              <p style="margin: 0 0 15px 0;">Check if you see "Promo Code Applied" message above</p>
+              <div>
+                <button id="codeValid" style="background: #4CAF50; color: white; border: none; padding: 10px 15px; margin: 0 5px; cursor: pointer; border-radius: 4px;">
+                  Valid ✓ (Code Applied)
+                </button>
+                <button id="codeInvalid" style="background: #F44336; color: white; border: none; padding: 10px 15px; margin: 0 5px; cursor: pointer; border-radius: 4px;">
+                  Invalid ✗ (Error/Not Available)
+                </button>
+                <button id="codeCancel" style="background: #9E9E9E; color: white; border: none; padding: 10px 15px; margin: 0 5px; cursor: pointer; border-radius: 4px;">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          `;
+          
+          // Add to body or create a new body if needed
+          if (newWindow.document.body) {
+            newWindow.document.body.appendChild(controlPanel);
+          }
+          
+          // Add event listeners
+          const validBtn = newWindow.document.getElementById('codeValid');
+          const invalidBtn = newWindow.document.getElementById('codeInvalid');
+          const cancelBtn = newWindow.document.getElementById('codeCancel');
+          
+          if (validBtn) {
+            validBtn.addEventListener('click', () => {
+              newWindow.close();
+              resolve({
+                code,
+                status: 'valid',
+                message: 'Promo code is valid (manually verified)'
+              });
+            });
+          }
+          
+          if (invalidBtn) {
+            invalidBtn.addEventListener('click', () => {
+              newWindow.close();
+              resolve({
+                code,
+                status: 'invalid',
+                message: 'Promo code is invalid or region-restricted (manually verified)'
+              });
+            });
+          }
+          
+          if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {
+              newWindow.close();
+              resolve({
+                code,
+                status: 'pending',
+                message: 'Validation cancelled'
+              });
+            });
+          }
+        } catch (error) {
+          // If we can't modify the popup (CORS), provide instructions
+          console.log('Could not modify popup:', error);
+        }
+      }, 2000);
+      
+      // Handle window close
+      const checkClosed = setInterval(() => {
+        if (newWindow.closed) {
+          clearInterval(checkClosed);
+          clearTimeout(validationTimer);
+          
+          // If window was closed without selecting an option
+          resolve({
+            code,
+            status: 'pending',
+            message: 'Validation window closed - please verify manually'
+          });
+        }
+      }, 500);
+    });
   } catch (error) {
-    console.error(`Error validating code ${code}:`, error)
+    console.error(`Error validating code ${code}:`, error);
     return {
       code,
-      status: 'invalid',
-      message: 'Validation error occurred - check your internet connection'
-    }
+      status: 'pending',
+      message: 'Error during validation - please try again'
+    };
   }
 }
 

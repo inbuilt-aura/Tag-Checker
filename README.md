@@ -123,12 +123,20 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## Validation Logic
 
+### Client-Side Validation with VPN Support
+
 The app validates codes by:
-1. Making requests to `https://www.perplexity.ai/join/p/priority/{CODE}`
-2. Parsing the HTML response for specific indicators:
-   - **Valid**: Shows promo entry form or subscription confirmation
-   - **Invalid**: Shows "An error occurred" message
-   - **Pending**: Unable to determine status
+1. Opening a popup window to `https://www.perplexity.ai/join/p/priority/{CODE}`
+2. Using the user's actual network connection (including any active VPN)
+3. Presenting a control panel for the user to report the validation result:
+   - **Valid**: "Promo Code Applied" message appears in the popup
+   - **Invalid**: Error message or no change to subscription status
+   - **Pending**: Validation in progress or user cancelled
+
+This client-side approach ensures:
+- Region-restricted codes work properly with the appropriate VPN
+- The user's actual network connection is used for validation
+- No server IP address conflicts occur during validation
 
 ## Security Features
 
