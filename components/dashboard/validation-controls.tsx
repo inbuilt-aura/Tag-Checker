@@ -28,6 +28,59 @@ export function ValidationControls() {
     }
   }
 
+  const handleEnhancedValidation = async () => {
+    if (!currentBatch) return;
+    
+    const pendingCodes = codes.filter(code => code.status === 'pending').map(code => code.code);
+    
+    if (pendingCodes.length === 0) {
+      toast.info("No pending codes to validate");
+      return;
+    }
+
+    toast.info(`Starting enhanced validation for ${pendingCodes.length} codes...`);
+    
+    try {
+      const response = await fetch('/api/enhanced-validation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codes: pendingCodes }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Enhanced validation failed');
+      }
+
+      const result = await response.json();
+      toast.success(`Enhanced validation completed! Valid: ${result.summary.valid}, Invalid: ${result.summary.invalid}, Pending: ${result.summary.pending}`);
+      
+      // Refresh the batch data
+      // You might need to add a refresh function to your store
+      
+    } catch (error) {
+      console.error('Enhanced validation error:', error);
+      toast.error('Enhanced validation failed. Try manual verification instead.');
+    }
+  };
+
+  const handleManualVerify = () => {
+    const pendingCodes = codes.filter(code => code.status === 'pending');
+    if (pendingCodes.length === 0) {
+      toast.info("No pending codes to verify manually");
+      return;
+    }
+
+    // Open popup windows for manual verification
+    pendingCodes.slice(0, 5).forEach((code, index) => { // Limit to 5 codes at once
+      setTimeout(() => {
+        const url = `https://www.perplexity.ai/join/p/airtel?discount_code=${code.code}`;
+        window.open(url, `verify-${code.code}`, 'width=800,height=600,scrollbars=yes');
+      }, index * 1000); // 1 second delay between popups
+    });
+
+    toast.success(`Opened ${Math.min(pendingCodes.length, 5)} codes for manual verification`);
+  }
+
   const handleExport = () => {
     const data = filteredCodes()
     if (data.length > 0) {
@@ -100,12 +153,12 @@ export function ValidationControls() {
           </div>
         )}
         
-        <div className="flex flex-col sm:flex-row gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
           <Button 
             onClick={handleValidate}
             disabled={!currentBatch || pendingCount === 0 || isValidating}
-            className="flex-1 sm:flex-none"
             size="sm"
+            className="w-full"
           >
             {isValidating ? (
               <>
@@ -126,10 +179,31 @@ export function ValidationControls() {
             ) : (
               <>
                 <Play className="h-4 w-4 mr-2" />
-                <span className="hidden sm:inline">Start Validation</span>
-                <span className="sm:hidden">Validate</span>
+                <span>Standard</span>
               </>
             )}
+          </Button>
+          
+          <Button 
+            variant="secondary"
+            onClick={handleEnhancedValidation}
+            disabled={!currentBatch || codes.filter(code => code.status === 'pending').length === 0}
+            size="sm"
+            className="w-full"
+          >
+            <TrendingUp className="h-4 w-4 mr-2" />
+            <span>Enhanced</span>
+          </Button>
+          
+          <Button 
+            variant="outline"
+            onClick={handleManualVerify}
+            disabled={!currentBatch || codes.filter(code => code.status === 'pending').length === 0}
+            size="sm"
+            className="w-full"
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            <span>Manual</span>
           </Button>
           
           <Button 
@@ -137,11 +211,10 @@ export function ValidationControls() {
             onClick={handleExport}
             disabled={codes.length === 0}
             size="sm"
-            className="flex-1 sm:flex-none"
+            className="w-full"
           >
             <Download className="h-4 w-4 mr-2" />
-            <span className="hidden sm:inline">Export CSV</span>
-            <span className="sm:hidden">Export</span>
+            <span>Export</span>
           </Button>
         </div>
 

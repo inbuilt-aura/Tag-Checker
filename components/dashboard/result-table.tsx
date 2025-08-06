@@ -4,12 +4,59 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { usePromoStore } from '@/lib/store'
 import { formatTimestamp } from '@/lib/date-utils'
-import { CheckCircle, XCircle, Clock, Filter, Code } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, Filter, Code, ExternalLink, Check, X } from 'lucide-react'
+import { toast } from 'sonner'
 
 export function ResultTable() {
-  const { filteredCodes, filter, setFilter } = usePromoStore()
+  const { filteredCodes, filter, setFilter, fetchCodes, currentBatch } = usePromoStore()
   
   const codes = filteredCodes()
+
+  const updateCodeStatus = async (codeId: string, status: 'valid' | 'invalid', message?: string) => {
+    try {
+      const response = await fetch('/api/update-code-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          codeId, 
+          status, 
+          message: message || `Manually marked as ${status}` 
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update code status');
+      }
+
+      // Refresh the codes data to show updated status
+      if (currentBatch) {
+        await fetchCodes(currentBatch.id);
+      }
+      toast.success(`Code marked as ${status}`);
+    } catch (error) {
+      console.error('Error updating code:', error);
+      toast.error('Failed to update code status');
+    }
+  };
+
+  const openCodeForVerification = (code: string) => {
+    const url = `https://www.perplexity.ai/join/p/airtel?discount_code=${code}`;
+    const newWindow = window.open(url, `verify-${code}`, 'width=800,height=600,scrollbars=yes');
+    
+    toast.info(
+      'Window opened! The page will try to auto-detect the result. If not, use the action buttons below.',
+      { duration: 5000 }
+    );
+    
+    // Alternative: Show instructions for manual script injection
+    setTimeout(() => {
+      if (newWindow && !newWindow.closed) {
+        console.log('=== AUTO-DETECTOR INSTRUCTIONS ===');
+        console.log('If auto-detection fails, paste this in the browser console:');
+        console.log('fetch("/auto-detector.js").then(r=>r.text()).then(eval)');
+      }
+    }, 5000);
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -73,7 +120,7 @@ export function ResultTable() {
         ) : (
           <>
             {/* Desktop Table */}
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden lg:block overflow-x-auto">
               <table className="w-full">
                 <thead className="border-b bg-muted/30">
                   <tr>
@@ -81,6 +128,7 @@ export function ResultTable() {
                     <th className="text-left py-3 px-4 font-medium text-sm">Status</th>
                     <th className="text-left py-3 px-4 font-medium text-sm">Message</th>
                     <th className="text-left py-3 px-4 font-medium text-sm">Timestamp</th>
+                    <th className="text-center py-3 px-4 font-medium text-sm w-32">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -114,6 +162,41 @@ export function ResultTable() {
                             )}
                           </div>
                         </td>
+                        <td className="py-4 px-4">
+                          <div className="flex items-center justify-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 w-7 p-0"
+                              onClick={() => openCodeForVerification(code.code)}
+                              title={`Open ${code.code} for verification`}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </Button>
+                            {code.status === 'pending' && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 w-7 p-0 text-green-600 hover:bg-green-50"
+                                  onClick={() => updateCodeStatus(code.id, 'valid', 'Manually verified as valid')}
+                                  title="Mark as Valid"
+                                >
+                                  <Check className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
+                                  onClick={() => updateCodeStatus(code.id, 'invalid', 'Manually verified as invalid')}
+                                  title="Mark as Invalid"
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     )
                   })}
@@ -121,8 +204,8 @@ export function ResultTable() {
               </table>
             </div>
 
-            {/* Mobile Card List */}
-            <div className="md:hidden space-y-3 p-4 border-t">
+            {/* Mobile/Tablet Card List */}
+            <div className="lg:hidden space-y-3 p-4 border-t">
               {codes.map((code) => {
                 const timestamp = formatTimestamp(code.timestamp)
                 return (
@@ -147,12 +230,48 @@ export function ResultTable() {
                       </div>
                     )}
                     
-                    <div className="flex items-center text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3 mr-1" />
-                      <span className="font-medium">{timestamp.primary}</span>
-                      {timestamp.secondary && (
-                        <span className="ml-1 opacity-70">{timestamp.secondary}</span>
-                      )}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3 mr-1" />
+                        <span className="font-medium">{timestamp.primary}</span>
+                        {timestamp.secondary && (
+                          <span className="ml-1 opacity-70">{timestamp.secondary}</span>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 w-7 p-0"
+                          onClick={() => openCodeForVerification(code.code)}
+                          title={`Open ${code.code} for verification`}
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </Button>
+                        {code.status === 'pending' && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 w-7 p-0 text-green-600 hover:bg-green-50"
+                              onClick={() => updateCodeStatus(code.id, 'valid', 'Manually verified as valid')}
+                              title="Mark as Valid"
+                            >
+                              <Check className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
+                              onClick={() => updateCodeStatus(code.id, 'invalid', 'Manually verified as invalid')}
+                              title="Mark as Invalid"
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )

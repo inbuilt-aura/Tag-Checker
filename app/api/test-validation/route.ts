@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Code is required' }, { status: 400 })
     }
 
-    const url = `https://www.perplexity.ai/join/p/priority/${code}`
+    const url = `https://www.perplexity.ai/join/p/airtel?discount_code=${code}`
     console.log(`Testing URL: ${url}`)
     
     try {

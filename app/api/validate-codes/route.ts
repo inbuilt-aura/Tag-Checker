@@ -21,10 +21,16 @@ export async function POST(request: NextRequest) {
 
     // Debug: Check all cookies
     const allCookies = cookieStore.getAll();
-    console.log("All cookies:", allCookies.map(c => ({ name: c.name, value: c.value.substring(0, 50) + '...' })));
+    console.log(
+      "All cookies:",
+      allCookies.map((c) => ({
+        name: c.name,
+        value: c.value.substring(0, 50) + "...",
+      }))
+    );
 
     // Get the access token from the Authorization header as fallback
-    const authHeader = request.headers.get('authorization');
+    const authHeader = request.headers.get("authorization");
     console.log("Auth header present:", !!authHeader);
 
     let user = null;
@@ -32,19 +38,27 @@ export async function POST(request: NextRequest) {
 
     try {
       // First try to get user from session
-      const { data: userData, error: userError } = await supabase.auth.getUser();
+      const { data: userData, error: userError } =
+        await supabase.auth.getUser();
       user = userData.user;
       authError = userError;
-      console.log("Session user result:", { userId: user?.id, error: userError?.message });
-      
+      console.log("Session user result:", {
+        userId: user?.id,
+        error: userError?.message,
+      });
+
       // If that fails and we have an auth header, try using the token directly
-      if ((!user || userError) && authHeader?.startsWith('Bearer ')) {
+      if ((!user || userError) && authHeader?.startsWith("Bearer ")) {
         const token = authHeader.substring(7);
         console.log("Trying with bearer token...");
-        const { data: tokenUser, error: tokenError } = await supabase.auth.getUser(token);
+        const { data: tokenUser, error: tokenError } =
+          await supabase.auth.getUser(token);
         user = tokenUser.user;
         authError = tokenError;
-        console.log("Token user result:", { userId: user?.id, error: tokenError?.message });
+        console.log("Token user result:", {
+          userId: user?.id,
+          error: tokenError?.message,
+        });
       }
     } catch (error) {
       console.log("Auth check error:", error);
@@ -56,11 +70,17 @@ export async function POST(request: NextRequest) {
 
     if (authError || !user) {
       console.log("Authentication failed:", authError);
-      return NextResponse.json({ 
-        error: "Unauthorized", 
-        details: (authError as any)?.message || "No user found",
-        debug: { hasAuthHeader: !!authHeader, cookieCount: allCookies.length }
-      }, { status: 401 });
+      return NextResponse.json(
+        {
+          error: "Unauthorized",
+          details: (authError as any)?.message || "No user found",
+          debug: {
+            hasAuthHeader: !!authHeader,
+            cookieCount: allCookies.length,
+          },
+        },
+        { status: 401 }
+      );
     }
 
     // First, let's see all codes in this batch
@@ -100,23 +120,34 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Validate each code
-    const validationPromises = codes.map(async (codeRecord) => {
+    // Validate each code with delay to avoid rate limiting
+    const validationPromises = codes.map(async (codeRecord, index) => {
       try {
-        console.log(`Validating code: ${codeRecord.code}`);
-        const url = `https://www.perplexity.ai/join/p/priority/${codeRecord.code}`;
+        // Add delay between requests to avoid rate limiting
+        await new Promise((resolve) => setTimeout(resolve, index * 2000)); // 2 second delay between each request
 
-        // Make request to Perplexity URL
+        console.log(`Validating code: ${codeRecord.code}`);
+        const url = `https://www.perplexity.ai/join/p/airtel?discount_code=${codeRecord.code}`;
+
+        // Make request to Perplexity URL with more realistic browser headers
         const response = await fetch(url, {
           method: "GET",
           headers: {
             "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "Accept-Language": "en-US,en;q=0.9",
-            "Cache-Control": "no-cache",
-            Pragma: "no-cache",
+            "Accept-Encoding": "gzip, deflate, br",
+            DNT: "1",
+            Connection: "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Cache-Control": "max-age=0",
+            Referer: "https://www.google.com/",
           },
           redirect: "follow",
           cache: "no-store",
@@ -129,45 +160,37 @@ export async function POST(request: NextRequest) {
         let status: "valid" | "invalid" | "pending" = "pending";
         let message = "";
 
-        if (!response.ok) {
-          console.log(
-            `HTTP Error ${response.status} for code ${codeRecord.code}`
-          );
-          status = "invalid";
-          if (response.status === 403) {
-            message = `Access Forbidden (${response.status}) - Possible region restriction`;
-          } else if (response.status === 451) {
-            message = `Unavailable for legal reasons (${response.status}) - Region blocked`;
-          } else if (response.status >= 400 && response.status < 500) {
-            message = `Client Error ${response.status} - Code likely invalid or region restricted`;
-          } else {
-            message = `HTTP Error ${response.status} - Code likely invalid`;
-          }
-        } else {
+        if (response.ok) {
           const html = await response.text();
           console.log(`HTML length for ${codeRecord.code}: ${html.length}`);
 
-          // Check for specific error messages from Perplexity
+          // Check for specific success indicators in the response
           if (
+            html.includes("Promo Code Applied") ||
+            html.includes("discount_code") ||
+            html.includes("Successfully applied") ||
+            html.includes("checkmark") ||
+            html.toLowerCase().includes("applied")
+          ) {
+            status = "valid";
+            message = "Promo code is valid and active";
+          } else if (
+            html.includes("Invalid") ||
+            html.includes("expired") ||
+            html.includes("not found") ||
+            html.includes("error")
+          ) {
+            status = "invalid";
+            message = "Promo code is invalid or expired";
+          } else if (
             html.includes("An error occurred") ||
             html.includes("promotion code is invalid") ||
             html.includes("likely your promotion code is invalid") ||
             html.includes("not available in your region") ||
-            html.includes("not available in your country") ||
-            html.includes("region") ||
-            html.includes("country") ||
-            html.includes("geographical") ||
-            html.includes("location")
+            html.includes("not available in your country")
           ) {
             status = "invalid";
-            // Extract more specific error message
-            if (html.includes("not available in your region") || html.includes("not available in your country")) {
-              message = "Code not available in current region/country";
-            } else if (html.includes("region") || html.includes("country") || html.includes("geographical") || html.includes("location")) {
-              message = "Possible region restriction - code may be valid in different location";
-            } else {
-              message = "An error occurred - promotion code is invalid";
-            }
+            message = "Promo code is invalid or region restricted";
           } else if (
             html.includes("Enter your promo code") ||
             html.includes("Continue") ||
@@ -178,13 +201,31 @@ export async function POST(request: NextRequest) {
             status = "valid";
             message = "Promo code is valid and ready to use";
           } else {
-            // Log more of the HTML content for better debugging
-            console.log(
-              `HTML content for ${codeRecord.code}:`,
-              html.substring(0, 500)
-            );
+            status = "pending";
+            message =
+              "Could not determine code validity from response - manual check needed";
+          }
+        } else {
+          console.log(
+            `HTTP Error ${response.status} for code ${codeRecord.code}`
+          );
+
+          if (response.status === 403) {
+            // For 403, we can't be sure - mark as pending for manual check
+            status = "pending";
+            message = `Access blocked (${response.status}) - Manual verification needed`;
+          } else if (response.status === 404) {
             status = "invalid";
-            message = "Unable to validate - check manually or try different region";
+            message = `Code not found (${response.status}) - Invalid promo code`;
+          } else if (response.status === 429) {
+            status = "pending";
+            message = `Rate limited (${response.status}) - Try again later`;
+          } else if (response.status >= 400 && response.status < 500) {
+            status = "invalid";
+            message = `Client Error ${response.status} - Code may be invalid`;
+          } else {
+            status = "pending";
+            message = `HTTP Error ${response.status} - Unable to verify code`;
           }
         }
 

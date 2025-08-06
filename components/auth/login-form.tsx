@@ -39,15 +39,12 @@ export function LoginForm() {
 
         if (error) throw error;
 
-        if (data.user && !data.user.email_confirmed_at) {
-          setMessage("Check your email for the confirmation link!");
-          toast.success("Confirmation email sent! Check your inbox.");
-        } else if (data.user) {
+        if (data.user) {
           setUser(data.user);
           toast.success("Account created successfully! Welcome!");
         }
 
-        // --- Sync session to cookies ---
+     
         if (data.session) {
           await fetch('/api/auth/callback', {
             method: 'POST',
